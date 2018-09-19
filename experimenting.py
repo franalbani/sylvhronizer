@@ -1,66 +1,62 @@
 #!/usr/bin/env python3
 
 import numpy as np
+from itertools import product
 import matplotlib.pyplot as plt
 
 
-def bits2square(bits, samples_per_bit):
+def symbols2samples(symbols, samples_per_symbol):
     '''
-    Return a sampled square signal.
-    bits: numpy.int array
+    Returns samples of a signal composed by
+    constant segments of symbols.
+
+    symbols:            (numpy.int array)
+    samples_per_symbol: (float)
     '''
-    N = np.floor(len(bits) * samples_per_bit)
-    
-    dt = 1.0 / samples_per_bit
-    
-    # Some initial delay:
-    t0 = dt * 0.2 # np.random.uniform(0.1, 0.9) * dt
+    S = len(symbols)
 
-    ts = t0 + np.arange(N) * dt
-    
-    aux = np.floor(ts / (samples_per_bit*dt)).astype(np.int64)
-    aux = aux[aux < len(bits)]
-    square = bits[aux] * 2 - 1
-    ts = ts[:len(square)]
-    return (ts, square)
+    # Amount of samples needed to represent all symbols: 
+    N = np.floor(S * samples_per_symbol)
+    # TODO: floor or ceil?
 
+    symbol_indexes = np.floor(np.arange(N) / samples_per_symbol).astype(np.int64)
+    samples = symbols[symbol_indexes]
+    return samples
+ 
 
-def sylvhronizer(signal, samples_per_bit):
+def sylvhronizer(signal, samples_per_symbol):
     '''
-    Returns a tuple of indices and corresponding
-    samples.
+    Returns the indexes of correct sampling
+    for obtaining symbols.
 
     '''
 
     # Initial hint:
-    one_every = samples_per_bit
+    one_every = samples_per_symbol
 
     # `phase` should be interpreted in the
     # sampling frequency sense.
     phase = float(one_every)
     assert phase > 1
 
-    # We will discard all samples before first transition:
-    # FIXME: this requires pre-slicing
+    # We will discard all samples before first symbol transition:
     k0 = min(k for k, d in enumerate(np.diff(signal)) if d != 0)
 
     # First sample is always chosen:
     ks = [k0]
     ps = signal[k0]
-    output = [ps]
 
     for k, s in enumerate(signal[(k0+1):], start=k0+1):
         # New sample
         phase -= 1.0
 
         # Transition
-        if np.sign(ps) != np.sign(s):
+        if ps != s:
             phase = one_every / 2.0
 
-        # Should we output
+        # Should we sample?
         if phase < 0.5:
-            # We must output a sample:
-            output.append(s)
+            # We must sample here:
             ks.append(k)
 
             # and fix the phase for the next:
@@ -68,70 +64,49 @@ def sylvhronizer(signal, samples_per_bit):
 
         ps = s
 
-    output = np.array(output)
-    return ks, output
+    return ks
 
 
-def experiment(samples_per_bit, B=10000):
-    '''
-    Generates a random signal and measures BER after synch.
-    
-    '''
-    # FIXME: BER is not a proper meassurement of the quality of a synchronizer.
+def experiment(samples_per_symbol, block_size):
 
-    bits = np.random.randint(0, 2, size=B)
- 
-    ts, square = bits2square(bits, samples_per_bit)
- 
-    ks, _ = sylvhronizer(square, samples_per_bit)
- 
-    recovered_bits = (0.5 * (square[ks] + 1)).astype(np.int64)
+    symbols = np.random.randint(0, 2, size=block_size)
+    signal = symbols2samples(symbols, samples_per_symbol)
 
-    # first_recovered_bit
-    frb = int(np.floor(ks[0] / samples_per_bit))
+    ks = sylvhronizer(signal, samples_per_symbol)
 
-    ber = np.mean(bits[frb:] != recovered_bits)
+    # First recovered symbol:
+    frs = int(np.floor(ks[0] / samples_per_symbol))
+    rec_symbols = signal[ks]
 
-    return ber
+    error_rate = np.mean(symbols[frs:] != rec_symbols)
 
+    aux = len(symbols[frs:]) - len(rec_symbols)
+    if aux != 0:
+        print('Warning: rec_symbols length differ in %d' % aux)
 
-def aux(samples_per_bit):
-    B = 20
-    bits = np.random.randint(0, 2, size=B)
- 
-    ts, square = bits2square(bits, samples_per_bit)
- 
-    ks, _ = sylvhronizer(square, samples_per_bit)
+    return error_rate
 
-    recovered_bits = (0.5 * (square[ks] + 1)).astype(np.int64)
-
-    # first_recovered_bit
-    frb = int(np.floor(ks[0] / samples_per_bit))
-
-    ber = np.mean(bits[frb:] != recovered_bits)
-
-    plt.plot(ts, square, '.-', color='blue')
-    plt.plot(ts[ks], square[ks], 'o', color='red')
-    plt.title('%r\n%r' % (list(bits[frb:]), list(recovered_bits)))
-    plt.grid(True)
-    plt.show()
-    
 
 if __name__ == '__main__':
 
-    spbs = np.arange(1.05, 5, 0.11)
-    b_sizes = np.array([10, 20, 50, 100, 200, 500, 1000, 2000, 5000])
-    BER = np.empty(shape=(len(spbs), len(b_sizes)))
-    for i, spb in enumerate(spbs):
-        for j, bs in enumerate(b_sizes):
-            BER[i, j] = experiment(spb, B=bs)
-    
-    plt.imshow(BER)
+    spss = np.arange(1.05, 5, 0.11)
+    block_sizes = np.array([10, 20, 50, 100, 200, 500, 1000, 2000, 5000])
+
+    BER = -np.ones(shape=(len(spss), len(block_sizes)))
+    exceptions = []
+    M = 10
+
+    for (i, sps), (j, block_size) in product(enumerate(spss), enumerate(block_sizes)):
+        try:
+            BER[i, j] = np.mean([experiment(sps, block_size) for _ in range(M)])
+        except Exception as e:
+            exceptions.append((sps, block_size, e))
+   
+    print(exceptions) 
+    plt.imshow(BER, cmap='coolwarm')
     plt.colorbar()
-#     plt.plot(spbs, bers, 'o-')
     plt.xlabel('Block size')
     plt.ylabel('Samples per bit')
-#    plt.grid(True)
-    plt.xticks(range(len(b_sizes)), b_sizes)
-    plt.yticks(range(len(spbs)), map(lambda s: '%0.2f' % s, spbs))
+    plt.xticks(range(len(block_sizes)), block_sizes, rotation='vertical')
+    plt.yticks(range(len(spss)), map(lambda s: '%0.2f' % s, spss))
     plt.show()
