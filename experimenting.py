@@ -50,7 +50,7 @@ def sylvhronizer(signal, samples_per_bit):
         phase -= 1.0
 
         # Transition
-        if ps != s:
+        if np.sign(ps) != np.sign(s):
             phase = one_every / 2.0
 
         # Should we output
