@@ -29,34 +29,42 @@ def sylvhronizer(signal, samples_per_bit):
     '''
     Returns a tuple of indices and corresponding
     samples.
-    
-    For the moment, is trivial.
 
     '''
-    # FIXME: add zero-crossing logic
 
     # Initial hint:
     one_every = samples_per_bit
-    
+
     # `phase` should be interpreted in the
     # sampling frequency sense.
-    phase = one_every
+    phase = float(one_every)
     assert phase > 1
-    
+
     # First sample is always chosen:
+    ps = signal[0]
     ks = [0]
     output = [signal[0]]
-    
+
     for k, s in enumerate(signal[1:], start=1):
-        if phase < 1:
+        # New sample
+        phase -= 1.0
+
+        # Transition
+        if ps != s:
+            phase = one_every / 2.0
+
+        # Should we output
+        if phase < 0.5:
             # We must output a sample:
             output.append(s)
             ks.append(k)
+
             # and fix the phase for the next:
             phase += one_every
-        phase -= 1
 
-    output = np.array(output) 
+        ps = s
+
+    output = np.array(output)
     return ks, output
 
 
