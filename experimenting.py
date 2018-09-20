@@ -30,28 +30,24 @@ def sylvhronizer(signal, samples_per_symbol):
     for obtaining symbols.
 
     '''
-
     # Initial hint:
     one_every = samples_per_symbol
+    # TODO: learn from transitions for jittering clocks
 
     # `phase` should be interpreted in the
     # sampling frequency sense.
     phase = float(one_every)
     assert phase > 1
 
-    # We will discard all samples before first symbol transition:
-    k0 = min(k for k, d in enumerate(np.diff(signal)) if d != 0)
+    previous_sample = None
+    ks = []
 
-    # First sample is always chosen:
-    ks = [k0]
-    ps = signal[k0]
-
-    for k, s in enumerate(signal[(k0+1):], start=k0+1):
+    for k, sample in enumerate(signal):
         # New sample
         phase -= 1.0
 
         # Transition
-        if ps != s:
+        if sample != previous_sample:
             phase = one_every / 2.0
 
         # Should we sample?
@@ -62,7 +58,7 @@ def sylvhronizer(signal, samples_per_symbol):
             # and fix the phase for the next:
             phase += one_every
 
-        ps = s
+        previous_sample = sample
 
     return ks
 
@@ -74,39 +70,42 @@ def experiment(samples_per_symbol, block_size):
 
     ks = sylvhronizer(signal, samples_per_symbol)
 
-    # First recovered symbol:
-    frs = int(np.floor(ks[0] / samples_per_symbol))
     rec_symbols = signal[ks]
+    # FIXME: len(rec_symbols) != len(symbols) by as much as ~175
 
-    error_rate = np.mean(symbols[frs:] != rec_symbols)
-
-    aux = len(symbols[frs:]) - len(rec_symbols)
-    if aux != 0:
-        print('Warning: rec_symbols length differ in %d' % aux)
+    # FIXME: this is not a sensible quality measurement for synchronizers.
+    error_rate = np.mean(symbols != rec_symbols)
 
     return error_rate
 
 
 if __name__ == '__main__':
 
-    spss = np.arange(1.05, 5, 0.11)
-    block_sizes = np.array([10, 20, 50, 100, 200, 500, 1000, 2000, 5000])
+    spss = np.arange(1.5, 8, 0.21)
+    block_sizes = np.array([2])
+    block_sizes = np.concatenate([block_sizes, np.arange(20, 100+1, 10)])
+    block_sizes = np.concatenate([block_sizes, np.arange(100, 1000+1, 100)])
+    block_sizes = block_sizes[1:]
 
-    BER = -np.ones(shape=(len(spss), len(block_sizes)))
+    SER = -np.ones(shape=(len(spss), len(block_sizes)))
     exceptions = []
     M = 10
 
+    # FIXME: this statistic was not carefully thought:
     for (i, sps), (j, block_size) in product(enumerate(spss), enumerate(block_sizes)):
         try:
-            BER[i, j] = np.mean([experiment(sps, block_size) for _ in range(M)])
+            SER[i, j] = np.mean([experiment(sps, block_size) for _ in range(M)])
         except Exception as e:
             exceptions.append((sps, block_size, e))
    
     print(exceptions) 
-    plt.imshow(BER, cmap='coolwarm')
+
+    plt.imshow(SER, cmap='coolwarm')
     plt.colorbar()
+    plt.title('Symbol Error rate')
     plt.xlabel('Block size')
     plt.ylabel('Samples per bit')
     plt.xticks(range(len(block_sizes)), block_sizes, rotation='vertical')
     plt.yticks(range(len(spss)), map(lambda s: '%0.2f' % s, spss))
+    plt.savefig('ser.png', bbox_inches='tight')
     plt.show()
