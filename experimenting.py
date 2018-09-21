@@ -104,7 +104,7 @@ if __name__ == '__main__':
     plt.colorbar()
     plt.title('Symbol Error rate')
     plt.xlabel('Block size')
-    plt.ylabel('Samples per bit')
+    plt.ylabel('Samples per symbol')
     plt.xticks(range(len(block_sizes)), block_sizes, rotation='vertical')
     plt.yticks(range(len(spss)), map(lambda s: '%0.2f' % s, spss))
     plt.savefig('ser.png', bbox_inches='tight')
