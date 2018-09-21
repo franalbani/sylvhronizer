@@ -1,5 +1,48 @@
 import numpy as np
 from gnuradio import gr
+import pmt
+
+
+class Sylvhronizer(gr.sync_block):  # other base classes are basic_block, decim_block, interp_block
+    """Embedded Python Block example - a simple multiply const"""
+
+    def __init__(self, samples_per_symbol=2.5):  # only default arguments here
+        """arguments to this function show up as parameters in GRC"""
+        gr.sync_block.__init__(
+            self,
+            name=self.__class__.__name__,   # will show up in GRC
+            in_sig=[np.float32],
+            out_sig=[np.float32]
+        )
+        # if an attribute with the same name as a parameter is found,
+        # a callback is registered (properties work, too).
+
+        self.one_every = samples_per_symbol
+        self.phase = float(self.one_every)
+        self.previous_sample = None
+
+
+    def work(self, input_items, output_items):
+        """example: multiply with constant"""
+        signal = input_items[0]
+        
+        for k, sample in enumerate(signal):
+            self.phase -= 1.0
+
+            if sample != self.previous_sample:
+                self.phase = self.one_every / 2.0
+
+            if self.phase < 0.5:
+                self.add_item_tag(  0, # Port number
+                                    self.nitems_written(0) + k, # Offset
+                                    pmt.intern("here"), # Key
+                                    pmt.intern('%s' % k))
+                self.phase += self.one_every
+
+            self.previous_sample = sample
+
+        output_items[0][:] = input_items[0]
+        return len(output_items[0])
 
 
 class TaggedSamplesPicker(gr.basic_block):
